@@ -3,6 +3,7 @@
  * By Brais Solla G.
  * 
  * Ported from Android NDK examples as an exercice of optimization
+ * Ported to run on a Nintendo DS(i) using libnds
  */
 
 #include <nds.h>
@@ -131,6 +132,7 @@ static void init_tables(void){
 #define XT1_INCR FIXED_FROM_FLOAT(1/173.)
 #define XT2_INCR FIXED_FROM_FLOAT(1/242.)
 
+// Store this function into the ARM9 ITCM (32kB 0 waitstate memory)
 ITCM_CODE void drawPlasma(uint16_t* fbo, uint32_t frame){
     Fixed yt1 = FIXED_FROM_FLOAT(frame/73.82f);
     Fixed yt2 = yt1;
@@ -185,6 +187,7 @@ ITCM_CODE void drawPlasma(uint16_t* fbo, uint32_t frame){
 }
 
 #ifndef SCFG_EXT9
+// Hardware registers to enable 32 bit bus width and 8 bit writes to the DSi VRAM (Only DSi on TWL mode!)
 #define TWL_BASE_ADDR (0x4004000)
 #define SCFG_EXT9_ADDR (TWL_BASE_ADDR + 0x8)
 #define SCFG_EXT9_REG *((volatile uint32_t*) SCFG_EXT9_ADDR)
@@ -197,6 +200,7 @@ ITCM_CODE void drawPlasma(uint16_t* fbo, uint32_t frame){
 int main(void) {
     consoleDemoInit();
     
+    // Use VRAM A as background 3 in the main engine, framebuffer like mode
     vramSetBankA(VRAM_A_MAIN_BG);
     videoSetMode(MODE_5_2D);
     int bg3Main = bgInit(3, BgType_Bmp16, BgSize_B16_256x256, 1, 0);
@@ -207,6 +211,7 @@ int main(void) {
 	iprintf("Based on NDK Example plasma\n");
     
     if(isDSiMode()){
+        // DSi in TWL mode, push CPU to 134 MHz, enable extended access to memory
         setCpuClock(true);
         SCFG_EXT9_REG |= (SCFG_EXT9_EXTENDED_VRAM_ACCESS | SCFG_EXT9_REVISED_DMA);
         
@@ -222,6 +227,8 @@ int main(void) {
     // Init plasma...
     
     cpuStartTiming(0);
+    // !: We can probably optimize this more using the NDS hardware palettes! 
+    // Check: http://problemkaputt.de/gbatek.htm#dsvideobgmodescontrol // http://problemkaputt.de/gbatek.htm#dsvideoextendedpalettes
     init_tables();
     uint32_t ticks = cpuEndTiming();
     printf("LUTS done! (%.3f ms)\n", (float) (ticks / (float) BUS_CLOCK) * 1000.f);
@@ -233,6 +240,7 @@ int main(void) {
     irqSet(IRQ_VBLANK, VblankIRQ);
     
     while(1){
+        // Red color on background backdrop (0) to check CPU usage graphically
         BG_PALETTE_SUB[0] = 31;
         scanKeys();
         int keys = keysDown();
@@ -244,10 +252,11 @@ int main(void) {
         
         
         iprintf("\x1b[15;0HFrame = %lu",frame);
+        // TODO: Avoid using floating point operations on the DS CPU! It does not have a FPU! (ARM946E-S)
         printf("\x1b[16;0HPlasma= %.2f ms", (float) plasma_ticks / (float) BUS_CLOCK * 1000.f);
 
         
-        
+        // Set backdrop color to black
         BG_PALETTE_SUB[0] = 0x0000;
         swiWaitForVBlank();
     }
